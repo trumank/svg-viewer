@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -63,6 +64,20 @@
 
     #file-input {
       font-size: 13px;
+    }
+
+    #examples-select {
+      background: #444;
+      border: 1px solid #555;
+      color: #e0e0e0;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    #examples-select:hover {
+      background: #555;
     }
 
     #zoom-level {
@@ -176,7 +191,8 @@
     }
 
     /* Hide hint on mobile/touch devices */
-    @media (hover: none), (max-width: 768px) {
+    @media (hover: none),
+    (max-width: 768px) {
       #hint {
         display: none;
       }
@@ -258,18 +274,20 @@
     }
   </style>
 </head>
+
 <body>
   <div id="toolbar">
     <div class="group">
       <input type="file" id="file-input" accept=".svg">
-      <button id="load-test" title="Load vm_flow.svg">Test</button>
+      <select id="examples-select" title="Load example SVG">
+        <option value="">Examples...</option>
+      </select>
     </div>
     <div class="group">
       <button id="zoom-out" title="Zoom out (-)">-</button>
       <span id="zoom-level">100%</span>
       <button id="zoom-in" title="Zoom in (+)">+</button>
       <button id="zoom-reset" title="Reset zoom (0)">Reset</button>
-      <button id="zoom-fit" title="Fit to window">Fit</button>
     </div>
     <div class="group">
       <button id="dark-mode-toggle" title="Toggle dark mode for SVG (D)">Dark Mode</button>
@@ -360,8 +378,41 @@
       if (file) loadSvgFile(file);
     });
 
-    // Test button - load default SVG
-    document.getElementById('load-test').addEventListener('click', tryLoadDefaultSvg);
+    // Examples dropdown
+    const examplesSelect = document.getElementById('examples-select');
+    const exampleFiles = [
+      'vm_flow.svg',
+      'PLS_Base.svg',
+      'dominion.svg',
+      'blueprint.svg',
+    ];
+
+    // Populate examples dropdown
+    exampleFiles.forEach(file => {
+      const option = document.createElement('option');
+      option.value = file;
+      option.textContent = file;
+      examplesSelect.appendChild(option);
+    });
+
+    examplesSelect.addEventListener('change', async (e) => {
+      const file = e.target.value;
+      if (!file) return;
+
+      try {
+        const response = await fetch(`examples/${file}`);
+        if (response.ok) {
+          const svgText = await response.text();
+          loadSvgContent(svgText);
+          document.title = `SVG Viewer - ${file}`;
+        }
+      } catch (err) {
+        console.error('Failed to load example:', err);
+      }
+
+      // Reset dropdown to placeholder
+      examplesSelect.value = '';
+    });
 
     // Drag and drop
     document.addEventListener('dragover', (e) => {
@@ -448,7 +499,6 @@
     document.getElementById('zoom-in').addEventListener('click', () => zoomBy(1.25));
     document.getElementById('zoom-out').addEventListener('click', () => zoomBy(0.8));
     document.getElementById('zoom-reset').addEventListener('click', () => setZoom(1));
-    document.getElementById('zoom-fit').addEventListener('click', fitToWindow);
 
     // === Dark Mode Toggle ===
 
@@ -514,7 +564,7 @@
 
     function rasterizeSvgToCanvas(svgText, width, height, dpr) {
       const img = new Image();
-      const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+      const blob = new Blob([svgText], {type: 'image/svg+xml;charset=utf-8'});
       const url = URL.createObjectURL(blob);
 
       img.onload = () => {
@@ -584,7 +634,7 @@
 
       // Check if clicking inside the viewport indicator
       const inViewport = e.clientX >= vpRect.left && e.clientX <= vpRect.right &&
-                         e.clientY >= vpRect.top && e.clientY <= vpRect.bottom;
+        e.clientY >= vpRect.top && e.clientY <= vpRect.bottom;
 
       if (inViewport) {
         // Drag from current position
@@ -695,16 +745,6 @@
       updateZoom();
     }
 
-    function fitToWindow() {
-      if (!svgElement) return;
-      const rect = viewport.getBoundingClientRect();
-      const scaleX = rect.width / svgWidth;
-      const scaleY = rect.height / svgHeight;
-      scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.min(scaleX, scaleY) * 0.95));
-      updateZoom();
-      centerSvg();
-    }
-
     function centerSvg() {
       const rect = viewport.getBoundingClientRect();
       const padX = rect.width;
@@ -750,7 +790,7 @@
       e.preventDefault();
       const factor = e.deltaY < 0 ? 1.1 : 0.9;
       zoomBy(factor, e.clientX, e.clientY);
-    }, { passive: false });
+    }, {passive: false});
 
     // === Panning ===
 
@@ -807,7 +847,7 @@
         touchStartScale = scale;
         lastTouchCenter = getTouchCenter(e.touches);
       }
-    }, { passive: false });
+    }, {passive: false});
 
     viewport.addEventListener('touchmove', (e) => {
       if (e.touches.length === 2) {
@@ -834,7 +874,7 @@
 
         lastTouchCenter = center;
       }
-    }, { passive: false });
+    }, {passive: false});
 
     viewport.addEventListener('touchend', (e) => {
       if (e.touches.length < 2) {
@@ -1069,7 +1109,7 @@
         }
       } catch (e) {
         // Fallback: try to scroll the element into view
-        textEl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+        textEl.scrollIntoView({behavior: 'smooth', block: 'center', inline: 'center'});
       }
     }
 
@@ -1123,26 +1163,7 @@
       }
     });
 
-    // === Auto-load SVG from same directory ===
-
-    // Try to load vm_flow.svg if it exists (for convenience)
-    async function tryLoadDefaultSvg() {
-      try {
-        const response = await fetch('vm_flow.svg');
-        if (response.ok) {
-          const svgText = await response.text();
-          loadSvgContent(svgText);
-          document.title = 'SVG Viewer - vm_flow.svg';
-        }
-      } catch (e) {
-        // Ignore - user will load manually
-      }
-    }
-
-    // Only try auto-load if served via HTTP (not file://)
-    if (window.location.protocol !== 'file:') {
-      tryLoadDefaultSvg();
-    }
   </script>
 </body>
+
 </html>
