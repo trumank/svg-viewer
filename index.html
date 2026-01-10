@@ -97,15 +97,15 @@
       flex: 1;
       overflow: auto;
       position: relative;
+      touch-action: pan-x pan-y;
+    }
+
+    #viewport.pan-ready {
       cursor: grab;
     }
 
     #viewport.panning {
       cursor: grabbing;
-    }
-
-    #viewport.selecting {
-      cursor: text;
     }
 
     #svg-wrapper {
@@ -168,6 +168,13 @@
       border-radius: 3px;
       font-family: inherit;
       margin: 0 2px;
+    }
+
+    /* Hide hint on mobile/touch devices */
+    @media (hover: none), (max-width: 768px) {
+      #hint {
+        display: none;
+      }
     }
 
     /* Minimap */
@@ -250,6 +257,7 @@
   <div id="toolbar">
     <div class="group">
       <input type="file" id="file-input" accept=".svg">
+      <button id="load-test" title="Load vm_flow.svg">Test</button>
     </div>
     <div class="group">
       <button id="zoom-out" title="Zoom out (-)">-</button>
@@ -288,10 +296,8 @@
   </div>
 
   <div id="hint">
-    <kbd>Scroll</kbd> to pan &nbsp;
-    <kbd>Wheel</kbd> to zoom &nbsp;
-    <kbd>Drag</kbd> to pan &nbsp;
-    <kbd>Shift+Drag</kbd> to select text
+    <kbd>Wheel</kbd> zoom &nbsp;
+    <kbd>Ctrl+Drag</kbd> pan
   </div>
 
   <div id="drop-overlay">Drop SVG file here</div>
@@ -348,6 +354,9 @@
       const file = e.target.files[0];
       if (file) loadSvgFile(file);
     });
+
+    // Test button - load default SVG
+    document.getElementById('load-test').addEventListener('click', tryLoadDefaultSvg);
 
     // Drag and drop
     document.addEventListener('dragover', (e) => {
@@ -741,15 +750,8 @@
     // === Panning ===
 
     viewport.addEventListener('mousedown', (e) => {
-      // Shift+click = text selection mode
-      if (e.shiftKey) {
-        viewport.classList.add('selecting');
-        viewport.classList.remove('panning');
-        return; // Let browser handle text selection
-      }
-
-      // Middle mouse button always pans
-      if (e.button === 1 || e.button === 0) {
+      // Ctrl+click or middle mouse = pan mode
+      if (e.ctrlKey || e.metaKey || e.button === 1) {
         e.preventDefault();
         isPanning = true;
         panStartX = e.clientX;
@@ -758,6 +760,7 @@
         scrollStartY = viewport.scrollTop;
         viewport.classList.add('panning');
       }
+      // Otherwise, let browser handle text selection normally
     });
 
     document.addEventListener('mousemove', (e) => {
@@ -771,21 +774,82 @@
     document.addEventListener('mouseup', () => {
       isPanning = false;
       viewport.classList.remove('panning');
-      viewport.classList.remove('selecting');
     });
 
-    // Update cursor when shift is held
+    // Update cursor when ctrl is held
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Shift' && !isPanning) {
-        viewport.classList.add('selecting');
+      if ((e.key === 'Control' || e.key === 'Meta') && !isPanning) {
+        viewport.classList.add('pan-ready');
       }
     });
 
     document.addEventListener('keyup', (e) => {
-      if (e.key === 'Shift') {
-        viewport.classList.remove('selecting');
+      if (e.key === 'Control' || e.key === 'Meta') {
+        viewport.classList.remove('pan-ready');
       }
     });
+
+    // === Touch Support (pinch zoom only, panning is native scroll) ===
+
+    let touchStartDist = 0;
+    let touchStartScale = 1;
+    let lastTouchCenter = null;
+
+    viewport.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        touchStartDist = getTouchDistance(e.touches);
+        touchStartScale = scale;
+        lastTouchCenter = getTouchCenter(e.touches);
+      }
+    }, { passive: false });
+
+    viewport.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        const dist = getTouchDistance(e.touches);
+        const center = getTouchCenter(e.touches);
+        const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, touchStartScale * (dist / touchStartDist)));
+
+        if (newScale !== scale) {
+          // Zoom towards pinch center
+          const rect = viewport.getBoundingClientRect();
+          const padX = rect.width;
+          const padY = rect.height;
+
+          const svgX = (viewport.scrollLeft + center.x - rect.left - padX) / scale;
+          const svgY = (viewport.scrollTop + center.y - rect.top - padY) / scale;
+
+          scale = newScale;
+          updateZoom();
+
+          viewport.scrollLeft = svgX * scale + padX - (center.x - rect.left);
+          viewport.scrollTop = svgY * scale + padY - (center.y - rect.top);
+        }
+
+        lastTouchCenter = center;
+      }
+    }, { passive: false });
+
+    viewport.addEventListener('touchend', (e) => {
+      if (e.touches.length < 2) {
+        touchStartDist = 0;
+        lastTouchCenter = null;
+      }
+    });
+
+    function getTouchDistance(touches) {
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function getTouchCenter(touches) {
+      return {
+        x: (touches[0].clientX + touches[1].clientX) / 2,
+        y: (touches[0].clientY + touches[1].clientY) / 2
+      };
+    }
 
     // === Search ===
 
