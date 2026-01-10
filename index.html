@@ -196,7 +196,7 @@
       overflow: hidden;
     }
 
-    #minimap-svg {
+    #minimap-canvas {
       width: 100%;
       height: 100%;
       display: block;
@@ -210,13 +210,8 @@
       pointer-events: auto;
     }
 
-    #minimap-content.dark-mode #minimap-svg {
+    #minimap-content.dark-mode #minimap-canvas {
       filter: invert(0.88) hue-rotate(180deg);
-    }
-
-    #minimap-svg {
-      user-select: none;
-      pointer-events: none;
     }
 
     #drop-overlay {
@@ -287,6 +282,7 @@
 
   <div id="minimap">
     <div id="minimap-content">
+      <canvas id="minimap-canvas"></canvas>
       <div id="minimap-viewport"></div>
     </div>
   </div>
@@ -314,6 +310,7 @@
     const minimapToggle = document.getElementById('minimap-toggle');
     const minimap = document.getElementById('minimap');
     const minimapContent = document.getElementById('minimap-content');
+    const minimapCanvas = document.getElementById('minimap-canvas');
     const minimapViewport = document.getElementById('minimap-viewport');
 
     let scale = 1;
@@ -322,6 +319,7 @@
     let svgElement = null;
     let svgWidth = 0;
     let svgHeight = 0;
+    let minimapImageData = null; // Cached rasterized SVG
 
     // Panning state
     let isPanning = false;
@@ -460,12 +458,6 @@
     }
 
     function initMinimap(svgText) {
-      // Clone SVG for minimap (without search highlights)
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(svgText, 'image/svg+xml');
-      const minimapSvg = doc.documentElement;
-      minimapSvg.id = 'minimap-svg';
-
       // Calculate minimap size to fit within bounds while preserving aspect ratio
       const maxWidth = 400;
       const maxHeight = 600;
@@ -485,10 +477,12 @@
       minimap.style.width = mmWidth + 'px';
       minimap.style.height = mmHeight + 'px';
 
-      // Clear and add SVG to minimap
-      const existingSvg = minimapContent.querySelector('svg');
-      if (existingSvg) existingSvg.remove();
-      minimapContent.insertBefore(minimapSvg, minimapViewport);
+      // Set canvas size (use higher resolution for retina displays)
+      const dpr = window.devicePixelRatio || 1;
+      minimapCanvas.width = mmWidth * dpr;
+      minimapCanvas.height = mmHeight * dpr;
+      minimapCanvas.style.width = mmWidth + 'px';
+      minimapCanvas.style.height = mmHeight + 'px';
 
       // Show minimap
       minimap.classList.toggle('visible', minimapVisible);
@@ -497,8 +491,34 @@
       // Sync dark mode
       minimapContent.classList.toggle('dark-mode', darkMode);
 
+      // Rasterize SVG to canvas
+      rasterizeSvgToCanvas(svgText, mmWidth, mmHeight, dpr);
+
       // Update viewport indicator
       updateMinimapViewport();
+    }
+
+    function rasterizeSvgToCanvas(svgText, width, height, dpr) {
+      const img = new Image();
+      const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+
+      img.onload = () => {
+        const ctx = minimapCanvas.getContext('2d');
+        ctx.scale(dpr, dpr);
+        ctx.drawImage(img, 0, 0, width, height);
+        URL.revokeObjectURL(url);
+
+        // Cache the image data for potential re-use
+        minimapImageData = ctx.getImageData(0, 0, minimapCanvas.width, minimapCanvas.height);
+      };
+
+      img.onerror = () => {
+        console.error('Failed to rasterize SVG for minimap');
+        URL.revokeObjectURL(url);
+      };
+
+      img.src = url;
     }
 
     function updateMinimapViewport() {
