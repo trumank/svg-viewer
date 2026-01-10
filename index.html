@@ -87,6 +87,11 @@
       border-color: #0078d4;
     }
 
+    #search-input.invalid {
+      border-color: #d32f2f;
+      background: #3d2020;
+    }
+
     #search-info {
       font-size: 13px;
       color: #aaa;
@@ -271,7 +276,7 @@
       <button id="minimap-toggle" title="Toggle minimap (M)">Minimap</button>
     </div>
     <div class="group">
-      <input type="search" id="search-input" placeholder="Search... (Ctrl+F)">
+      <input type="search" id="search-input" placeholder="Regex search...">
       <button id="search-prev" title="Previous match (Shift+Enter)">Prev</button>
       <span id="search-info">0 / 0</span>
       <button id="search-next" title="Next match (Enter)">Next</button>
@@ -878,28 +883,50 @@
     function performSearch() {
       if (!svgElement || !highlightGroup) return;
 
-      const query = searchInput.value.trim().toLowerCase();
+      const query = searchInput.value.trim();
       clearHighlights();
       searchMatches = [];
       currentMatchIndex = -1;
 
       if (!query) {
         updateSearchInfo();
+        searchInput.classList.remove('invalid');
         return;
       }
 
-      // Find all text elements containing the query
+      // Try to compile regex
+      let regex;
+      try {
+        regex = new RegExp(query, 'gi');
+        searchInput.classList.remove('invalid');
+      } catch (e) {
+        // Invalid regex
+        searchInput.classList.add('invalid');
+        updateSearchInfo();
+        return;
+      }
+
+      // Find all text elements containing matches
       const textElements = svgElement.querySelectorAll('text');
       textElements.forEach((textEl) => {
         const content = textEl.textContent || '';
-        if (content.toLowerCase().includes(query)) {
-          searchMatches.push(textEl);
+        let match;
+        regex.lastIndex = 0; // Reset regex state
+        while ((match = regex.exec(content)) !== null) {
+          searchMatches.push({
+            element: textEl,
+            start: match.index,
+            length: match[0].length,
+            text: match[0]
+          });
+          // Prevent infinite loop on zero-length matches
+          if (match[0].length === 0) regex.lastIndex++;
         }
       });
 
       // Create highlights
-      searchMatches.forEach((textEl, index) => {
-        const rect = createHighlightRect(textEl);
+      searchMatches.forEach((match, index) => {
+        const rect = createHighlightRect(match);
         if (rect) {
           rect.dataset.index = index;
           highlightGroup.appendChild(rect);
@@ -908,22 +935,32 @@
 
       updateSearchInfo();
 
-      // Navigate to first match
+      // Navigate to first match (don't select - user is still typing)
       if (searchMatches.length > 0) {
         currentMatchIndex = 0;
         highlightCurrentMatch();
-        scrollToCurrentMatch();
+        scrollToCurrentMatch(false);
       }
     }
 
-    function createHighlightRect(textEl) {
+    function createHighlightRect(match) {
       try {
-        const bbox = textEl.getBBox();
+        const textEl = match.element;
+        const fullBbox = textEl.getBBox();
+        const content = textEl.textContent || '';
+
+        // Calculate approximate character width
+        const charWidth = fullBbox.width / content.length;
+
+        // Calculate highlight bounds for the matched portion
+        const x = fullBbox.x + (match.start * charWidth);
+        const width = match.length * charWidth;
+
         const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        rect.setAttribute('x', bbox.x - 2);
-        rect.setAttribute('y', bbox.y - 2);
-        rect.setAttribute('width', bbox.width + 4);
-        rect.setAttribute('height', bbox.height + 4);
+        rect.setAttribute('x', x - 1);
+        rect.setAttribute('y', fullBbox.y - 2);
+        rect.setAttribute('width', width + 2);
+        rect.setAttribute('height', fullBbox.height + 4);
         rect.classList.add('search-highlight');
 
         // Apply transforms from parent elements
@@ -969,7 +1006,7 @@
       }
 
       highlightCurrentMatch();
-      scrollToCurrentMatch();
+      scrollToCurrentMatch(true); // Select text on explicit navigation
     }
 
     function highlightCurrentMatch() {
@@ -980,10 +1017,11 @@
       updateSearchInfo();
     }
 
-    function scrollToCurrentMatch() {
+    function scrollToCurrentMatch(shouldSelect = false) {
       if (currentMatchIndex < 0 || currentMatchIndex >= searchMatches.length) return;
 
-      const textEl = searchMatches[currentMatchIndex];
+      const match = searchMatches[currentMatchIndex];
+      const textEl = match.element;
       try {
         const bbox = textEl.getBBox();
 
@@ -1024,9 +1062,31 @@
           top: targetScrollY,
           behavior: 'smooth'
         });
+
+        // Only select text on explicit navigation (Enter/buttons), not while typing
+        if (shouldSelect) {
+          selectMatchedText(match);
+        }
       } catch (e) {
         // Fallback: try to scroll the element into view
         textEl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+      }
+    }
+
+    function selectMatchedText(match) {
+      try {
+        const textEl = match.element;
+        const textNode = textEl.firstChild;
+        if (!textNode || textNode.nodeType !== Node.TEXT_NODE) return;
+
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.setStart(textNode, match.start);
+        range.setEnd(textNode, match.start + match.length);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      } catch (e) {
+        // Selection not supported or failed
       }
     }
 
@@ -1041,14 +1101,6 @@
     // === Keyboard Shortcuts ===
 
     document.addEventListener('keydown', (e) => {
-      // Ctrl+F or Cmd+F: Focus search
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-        e.preventDefault();
-        searchInput.focus();
-        searchInput.select();
-        return;
-      }
-
       // Don't handle shortcuts if typing in search
       if (document.activeElement === searchInput) return;
 
