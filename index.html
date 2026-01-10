@@ -118,14 +118,15 @@
       overflow: auto;
       position: relative;
       touch-action: pan-x pan-y;
-    }
-
-    #viewport.pan-ready {
       cursor: grab;
     }
 
     #viewport.panning {
       cursor: grabbing;
+    }
+
+    #svg-container text {
+      cursor: text;
     }
 
     #svg-wrapper {
@@ -320,7 +321,7 @@
 
   <div id="hint">
     <kbd>Wheel</kbd> zoom &nbsp;
-    <kbd>Ctrl+Drag</kbd> pan
+    <kbd>Drag</kbd> pan
   </div>
 
   <div id="drop-overlay">Drop SVG file here</div>
@@ -794,9 +795,29 @@
 
     // === Panning ===
 
+    function isTextElement(el) {
+      while (el && el !== viewport) {
+        if (el.tagName === 'text' || el.tagName === 'tspan') return true;
+        el = el.parentElement;
+      }
+      return false;
+    }
+
     viewport.addEventListener('mousedown', (e) => {
-      // Ctrl+click or middle mouse = pan mode
-      if (e.ctrlKey || e.metaKey || e.button === 1) {
+      // Middle mouse always pans
+      if (e.button === 1) {
+        e.preventDefault();
+        isPanning = true;
+        panStartX = e.clientX;
+        panStartY = e.clientY;
+        scrollStartX = viewport.scrollLeft;
+        scrollStartY = viewport.scrollTop;
+        viewport.classList.add('panning');
+        return;
+      }
+
+      // Left click: pan if not on text, otherwise let browser handle selection
+      if (e.button === 0 && !isTextElement(e.target)) {
         e.preventDefault();
         isPanning = true;
         panStartX = e.clientX;
@@ -805,7 +826,6 @@
         scrollStartY = viewport.scrollTop;
         viewport.classList.add('panning');
       }
-      // Otherwise, let browser handle text selection normally
     });
 
     document.addEventListener('mousemove', (e) => {
@@ -819,19 +839,6 @@
     document.addEventListener('mouseup', () => {
       isPanning = false;
       viewport.classList.remove('panning');
-    });
-
-    // Update cursor when ctrl is held
-    document.addEventListener('keydown', (e) => {
-      if ((e.key === 'Control' || e.key === 'Meta') && !isPanning) {
-        viewport.classList.add('pan-ready');
-      }
-    });
-
-    document.addEventListener('keyup', (e) => {
-      if (e.key === 'Control' || e.key === 'Meta') {
-        viewport.classList.remove('pan-ready');
-      }
     });
 
     // === Touch Support (pinch zoom only, panning is native scroll) ===
