@@ -66,7 +66,7 @@
       font-size: 13px;
     }
 
-    #examples-select {
+    .examples-select {
       background: #444;
       border: 1px solid #555;
       color: #e0e0e0;
@@ -76,7 +76,7 @@
       cursor: pointer;
     }
 
-    #examples-select:hover {
+    .examples-select:hover {
       background: #555;
     }
 
@@ -158,18 +158,29 @@
       background: #1084d8;
     }
 
-    /* Search highlight styling */
+    /* Search highlight styling - SVG rect fallback */
     .search-highlight {
-      fill: rgba(255, 230, 0, 0.4);
-      stroke: rgba(255, 200, 0, 0.8);
+      fill: #22ee22;
+      stroke: #00aa00;
       stroke-width: 1;
       pointer-events: none;
     }
 
     .search-highlight.current {
-      fill: rgba(255, 150, 0, 0.6);
-      stroke: rgba(255, 100, 0, 1);
+      fill: #ff22ff;
+      stroke: #cc00cc;
       stroke-width: 2;
+    }
+
+    /* CSS Custom Highlight API styling */
+    ::highlight(search-results) {
+      background-color: #22ee22;
+      color: black;
+    }
+
+    ::highlight(search-current) {
+      background-color: #ff22ff;
+      color: black;
     }
 
     #hint {
@@ -266,12 +277,51 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      color: #666;
-      gap: 12px;
+      color: #888;
+      gap: 16px;
     }
 
     #empty-state.hidden {
       display: none;
+    }
+
+    #empty-state .empty-title {
+      font-size: 32px;
+      font-weight: 600;
+      color: #ccc;
+    }
+
+    #empty-state .empty-subtitle {
+      font-size: 18px;
+      color: #666;
+    }
+
+    #empty-state .empty-divider {
+      font-size: 14px;
+      color: #555;
+      margin: 8px 0;
+    }
+
+    #empty-state .empty-actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    #empty-state button,
+    #empty-state select {
+      background: #444;
+      border: 1px solid #555;
+      color: #e0e0e0;
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    #empty-state button:hover,
+    #empty-state select:hover {
+      background: #555;
     }
   </style>
 </head>
@@ -280,7 +330,7 @@
   <div id="toolbar">
     <div class="group">
       <input type="file" id="file-input" accept=".svg">
-      <select id="examples-select" title="Load example SVG">
+      <select class="examples-select" title="Load example SVG">
         <option value="">Examples...</option>
       </select>
     </div>
@@ -303,7 +353,15 @@
   </div>
 
   <div id="empty-state">
-    <div>Drop an SVG file here or use the file picker above</div>
+    <div class="empty-title">SVG Viewer</div>
+    <div class="empty-subtitle">Drop an SVG file here</div>
+    <div class="empty-divider">or</div>
+    <div class="empty-actions">
+      <button id="empty-file-btn">Choose File</button>
+      <select class="examples-select">
+        <option value="">Load Example...</option>
+      </select>
+    </div>
   </div>
 
   <div id="viewport" style="display: none;">
@@ -379,40 +437,47 @@
       if (file) loadSvgFile(file);
     });
 
-    // Examples dropdown
-    const examplesSelect = document.getElementById('examples-select');
+    // Examples dropdowns (toolbar and empty state)
     const exampleFiles = [
       'vm_flow.svg',
       'PLS_Base.svg',
       'dominion.svg',
-      'blueprint.svg',
+      'blueprint.svg'
     ];
 
-    // Populate examples dropdown
-    exampleFiles.forEach(file => {
-      const option = document.createElement('option');
-      option.value = file;
-      option.textContent = file;
-      examplesSelect.appendChild(option);
+    document.querySelectorAll('.examples-select').forEach(select => {
+      // Populate options
+      exampleFiles.forEach(file => {
+        const option = document.createElement('option');
+        option.value = file;
+        option.textContent = file;
+        select.appendChild(option);
+      });
+
+      // Handle selection
+      select.addEventListener('change', async (e) => {
+        const file = e.target.value;
+        if (!file) return;
+
+        try {
+          const response = await fetch(`examples/${file}`);
+          if (response.ok) {
+            const svgText = await response.text();
+            loadSvgContent(svgText);
+            document.title = `SVG Viewer - ${file}`;
+          }
+        } catch (err) {
+          console.error('Failed to load example:', err);
+        }
+
+        // Reset dropdown to placeholder
+        select.value = '';
+      });
     });
 
-    examplesSelect.addEventListener('change', async (e) => {
-      const file = e.target.value;
-      if (!file) return;
-
-      try {
-        const response = await fetch(`examples/${file}`);
-        if (response.ok) {
-          const svgText = await response.text();
-          loadSvgContent(svgText);
-          document.title = `SVG Viewer - ${file}`;
-        }
-      } catch (err) {
-        console.error('Failed to load example:', err);
-      }
-
-      // Reset dropdown to placeholder
-      examplesSelect.value = '';
+    // Empty state file button
+    document.getElementById('empty-file-btn').addEventListener('click', () => {
+      fileInput.click();
     });
 
     // Drag and drop
@@ -927,8 +992,20 @@
     document.getElementById('search-prev').addEventListener('click', () => navigateSearch(-1));
     document.getElementById('search-next').addEventListener('click', () => navigateSearch(1));
 
+    // CSS Custom Highlight API highlights
+    let searchResultsHighlight = null;
+    let searchCurrentHighlight = null;
+
+    // Initialize highlights if API is available
+    if (CSS.highlights) {
+      searchResultsHighlight = new Highlight();
+      searchCurrentHighlight = new Highlight();
+      CSS.highlights.set('search-results', searchResultsHighlight);
+      CSS.highlights.set('search-current', searchCurrentHighlight);
+    }
+
     function performSearch() {
-      if (!svgElement || !highlightGroup) return;
+      if (!svgElement) return;
 
       const query = searchInput.value.trim();
       clearHighlights();
@@ -957,28 +1034,49 @@
       const textElements = svgElement.querySelectorAll('text');
       textElements.forEach((textEl) => {
         const content = textEl.textContent || '';
+        const textNode = textEl.firstChild;
+        if (!textNode || textNode.nodeType !== Node.TEXT_NODE) return;
+
         let match;
         regex.lastIndex = 0; // Reset regex state
         while ((match = regex.exec(content)) !== null) {
-          searchMatches.push({
-            element: textEl,
-            start: match.index,
-            length: match[0].length,
-            text: match[0]
-          });
+          // Create range for this match
+          try {
+            const range = new Range();
+            range.setStart(textNode, match.index);
+            range.setEnd(textNode, match.index + match[0].length);
+
+            searchMatches.push({
+              element: textEl,
+              start: match.index,
+              length: match[0].length,
+              text: match[0],
+              range: range
+            });
+          } catch (e) {
+            // Range creation failed, skip this match
+          }
+
           // Prevent infinite loop on zero-length matches
           if (match[0].length === 0) regex.lastIndex++;
         }
       });
 
-      // Create highlights
-      searchMatches.forEach((match, index) => {
-        const rect = createHighlightRect(match);
-        if (rect) {
-          rect.dataset.index = index;
-          highlightGroup.appendChild(rect);
-        }
-      });
+      // Add all ranges to the highlight (if API available)
+      if (searchResultsHighlight) {
+        searchMatches.forEach(match => {
+          searchResultsHighlight.add(match.range);
+        });
+      } else {
+        // Fallback: use SVG rects
+        searchMatches.forEach((match, index) => {
+          const rect = createHighlightRect(match);
+          if (rect) {
+            rect.dataset.index = index;
+            highlightGroup.appendChild(rect);
+          }
+        });
+      }
 
       updateSearchInfo();
 
@@ -1029,6 +1127,14 @@
     }
 
     function clearHighlights() {
+      // Clear CSS Custom Highlights
+      if (searchResultsHighlight) {
+        searchResultsHighlight.clear();
+      }
+      if (searchCurrentHighlight) {
+        searchCurrentHighlight.clear();
+      }
+      // Clear SVG rect fallback
       if (highlightGroup) {
         highlightGroup.innerHTML = '';
       }
@@ -1057,10 +1163,19 @@
     }
 
     function highlightCurrentMatch() {
-      const rects = highlightGroup.querySelectorAll('rect');
-      rects.forEach((rect, i) => {
-        rect.classList.toggle('current', i === currentMatchIndex);
-      });
+      if (searchCurrentHighlight) {
+        // Update current highlight
+        searchCurrentHighlight.clear();
+        if (currentMatchIndex >= 0 && currentMatchIndex < searchMatches.length) {
+          searchCurrentHighlight.add(searchMatches[currentMatchIndex].range);
+        }
+      } else {
+        // Fallback: toggle class on SVG rects
+        const rects = highlightGroup.querySelectorAll('rect');
+        rects.forEach((rect, i) => {
+          rect.classList.toggle('current', i === currentMatchIndex);
+        });
+      }
       updateSearchInfo();
     }
 
