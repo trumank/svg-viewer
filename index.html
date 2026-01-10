@@ -122,6 +122,21 @@
       display: block;
     }
 
+    /* Dark mode for SVG - invert with reduced contrast */
+    #svg-container.dark-mode svg {
+      filter: invert(0.88) hue-rotate(180deg);
+    }
+
+    /* Toggle button active state */
+    #toolbar button.active {
+      background: #0078d4;
+      border-color: #0078d4;
+    }
+
+    #toolbar button.active:hover {
+      background: #1084d8;
+    }
+
     /* Search highlight styling */
     .search-highlight {
       fill: rgba(255, 230, 0, 0.4);
@@ -200,6 +215,9 @@
       <button id="zoom-fit" title="Fit to window">Fit</button>
     </div>
     <div class="group">
+      <button id="dark-mode-toggle" title="Toggle dark mode for SVG (D)">Dark Mode</button>
+    </div>
+    <div class="group">
       <input type="search" id="search-input" placeholder="Search... (Ctrl+F)">
       <button id="search-prev" title="Previous match (Shift+Enter)">Prev</button>
       <span id="search-info">0 / 0</span>
@@ -236,8 +254,10 @@
     const searchInfo = document.getElementById('search-info');
     const emptyState = document.getElementById('empty-state');
     const dropOverlay = document.getElementById('drop-overlay');
+    const darkModeToggle = document.getElementById('dark-mode-toggle');
 
     let scale = 1;
+    let darkMode = false;
     let svgElement = null;
     let svgWidth = 0;
     let svgHeight = 0;
@@ -348,6 +368,16 @@
     document.getElementById('zoom-out').addEventListener('click', () => zoomBy(0.8));
     document.getElementById('zoom-reset').addEventListener('click', () => setZoom(1));
     document.getElementById('zoom-fit').addEventListener('click', fitToWindow);
+
+    // === Dark Mode Toggle ===
+
+    darkModeToggle.addEventListener('click', toggleDarkMode);
+
+    function toggleDarkMode() {
+      darkMode = !darkMode;
+      svgContainer.classList.toggle('dark-mode', darkMode);
+      darkModeToggle.classList.toggle('active', darkMode);
+    }
 
     function zoomBy(factor, centerX, centerY) {
       const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * factor));
@@ -717,6 +747,9 @@
       } else if (e.key === '0') {
         e.preventDefault();
         setZoom(1);
+      } else if (e.key === 'd' || e.key === 'D') {
+        e.preventDefault();
+        toggleDarkMode();
       }
     });
 
