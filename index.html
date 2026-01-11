@@ -366,7 +366,7 @@
 
   <div id="viewport" style="display: none;">
     <div id="svg-wrapper">
-      <div id="svg-container"></div>
+      <div id="svg-container"><!-- SVG_CONTENT --></div>
     </div>
   </div>
 
@@ -1285,6 +1285,62 @@
       }
     });
 
+    // === Embedded SVG Support ===
+
+    function initializeEmbeddedSvg() {
+      // Check if an SVG is already present in the container (embedded at build time)
+      svgElement = svgContainer.querySelector('svg');
+      if (!svgElement) return false;
+
+      // Hide file selection UI since this is a self-contained viewer
+      const fileGroup = document.querySelector('#toolbar .group:first-child');
+      if (fileGroup) fileGroup.style.display = 'none';
+      emptyState.style.display = 'none';
+
+      // Show viewport
+      viewport.style.display = 'block';
+
+      // Get SVG dimensions
+      const viewBox = svgElement.getAttribute('viewBox');
+      if (viewBox) {
+        const parts = viewBox.split(/\s+/).map(parseFloat);
+        svgWidth = parts[2];
+        svgHeight = parts[3];
+      } else {
+        svgWidth = parseFloat(svgElement.getAttribute('width')) || svgElement.getBoundingClientRect().width;
+        svgHeight = parseFloat(svgElement.getAttribute('height')) || svgElement.getBoundingClientRect().height;
+      }
+
+      // Set explicit dimensions on SVG for proper scaling
+      svgElement.style.width = svgWidth + 'px';
+      svgElement.style.height = svgHeight + 'px';
+
+      // Create highlight group for search results
+      highlightGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      highlightGroup.setAttribute('id', 'search-highlights');
+      svgElement.insertBefore(highlightGroup, svgElement.firstChild);
+
+      // Reset zoom and scroll
+      scale = 1;
+      updateZoom();
+
+      // Scroll to show top-left of SVG (accounting for padding)
+      const rect = viewport.getBoundingClientRect();
+      viewport.scrollTo(rect.width, rect.height);
+
+      // Clear search
+      clearSearch();
+
+      // Initialize minimap - serialize SVG for rasterization
+      const svgText = new XMLSerializer().serializeToString(svgElement);
+      initMinimap(svgText);
+
+      return true;
+    }
+
+    // Check for embedded SVG on startup
+    const hasEmbeddedSvg = initializeEmbeddedSvg();
+
     // === URL Hash Loading ===
 
     async function loadFromHash() {
@@ -1329,11 +1385,11 @@
       }
     }
 
-    // Load from hash on startup
-    loadFromHash();
-
-    // Also handle hash changes
-    window.addEventListener('hashchange', loadFromHash);
+    // Only load from hash if no embedded SVG
+    if (!hasEmbeddedSvg) {
+      loadFromHash();
+      window.addEventListener('hashchange', loadFromHash);
+    }
 
   </script>
 </body>
